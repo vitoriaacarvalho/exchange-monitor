@@ -1,0 +1,6 @@
+// use prisma-next
+
+model Test {
+  id        String            @id @default(uuid())
+  createdAt TimestamptzString @default(now())
+}
