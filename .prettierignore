@@ -1,0 +1,10 @@
+node_modules
+dist
+build
+coverage
+.yarn
+
+# Emitted by `prisma contract emit` / `migration plan` — do not hand-format
+src/prisma/contract.json
+src/prisma/contract.d.ts
+migrations/
