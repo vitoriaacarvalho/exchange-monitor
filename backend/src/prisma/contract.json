@@ -4,8 +4,8 @@
   "target": "postgres",
   "profileHash": "3916f444a8a17ad749191acf9e08dad97d1a327b88c2f1d45d12f240296aa8b2",
   "roots": {
-    "notification": {
-      "model": "Notification",
+    "alert": {
+      "model": "Alert",
       "namespace": "public"
     },
     "user": {
@@ -32,7 +32,7 @@
           }
         },
         "models": {
-          "Notification": {
+          "Alert": {
             "fields": {
               "baseCurrency": {
                 "nullable": false,
@@ -162,7 +162,7 @@
                 }
               },
               "namespaceId": "public",
-              "table": "notification"
+              "table": "alert"
             }
           },
           "User": {
@@ -245,12 +245,12 @@
       "public": {
         "entries": {
           "table": {
-            "notification": {
+            "alert": {
               "checks": [
                 {
                   "expression": "\"direction\" IN ('ABOVE', 'BELOW')",
-                  "name": "notification_direction_check_134ec2b3",
-                  "prefix": "notification_direction_check"
+                  "name": "alert_direction_check_134ec2b3",
+                  "prefix": "alert_direction_check"
                 },
                 {
                   "expression": "\"baseCurrency\" <> \"quoteCurrency\"",
@@ -337,7 +337,7 @@
                       "userId"
                     ],
                     "namespaceId": "public",
-                    "tableName": "notification"
+                    "tableName": "alert"
                   },
                   "target": {
                     "columns": [
@@ -351,6 +351,14 @@
               "indexes": [
                 {
                   "columns": [
+                    "userId"
+                  ],
+                  "name": "alert_userId_idx_a489d58a",
+                  "prefix": "alert_userId_idx",
+                  "unique": false
+                },
+                {
+                  "columns": [
                     "baseCurrency",
                     "quoteCurrency"
                   ],
@@ -358,14 +366,6 @@
                   "prefix": "notification_pair_active",
                   "unique": false,
                   "where": "(\"isActive\" = true)"
-                },
-                {
-                  "columns": [
-                    "userId"
-                  ],
-                  "name": "notification_userId_idx_a489d58a",
-                  "prefix": "notification_userId_idx",
-                  "unique": false
                 },
                 {
                   "columns": [
@@ -455,10 +455,10 @@
         "kind": "postgres-schema"
       }
     },
-    "storageHash": "472a0786478e2932424ff3b2a98e693de05bc440847282faf08419ead70f376f"
+    "storageHash": "0f21ee5e6ad83f27e4731f21e31958945f6698bb32df8092de2fae78ef8c14b0"
   },
   "execution": {
-    "executionHash": "5d5903a6e6516b99e5cced9ad4688f2362370559b654490523bc72cc938fab8b",
+    "executionHash": "bdd432c887570934e945302d12efd1a2774e01626d061bf2e16bd094e93e27ad",
     "mutations": {
       "defaults": [
         {
@@ -469,7 +469,7 @@
           "ref": {
             "column": "id",
             "namespace": "public",
-            "table": "notification"
+            "table": "alert"
           }
         },
         {
@@ -484,7 +484,7 @@
           "ref": {
             "column": "updatedAt",
             "namespace": "public",
-            "table": "notification"
+            "table": "alert"
           }
         },
         {
