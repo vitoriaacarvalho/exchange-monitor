@@ -1,0 +1,33 @@
+{
+  "name": "backend",
+  "type": "module",
+  "packageManager": "yarn@4.18.0",
+  "dependencies": {
+    "@prisma/orm-postgres": "8.0.0-rc.9",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@prisma/cli-engine": "0.2.3",
+    "@types/express": "^5.0.6",
+    "@types/node": "^22.20.2",
+    "eslint": "^10.10.0",
+    "prettier": "^3.9.6",
+    "prisma": "8.0.0-rc.10",
+    "tsx": "^4.23.13",
+    "typescript": "7",
+    "typescript-eslint": "^8.70.0"
+  },
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "postinstall": "prisma skills sync || exit 0",
+    "contract:emit": "prisma contract emit"
+  }
+}

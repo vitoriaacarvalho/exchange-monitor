@@ -1,0 +1,37 @@
+// use prisma-next
+
+enum CoinDirection {
+  ABOVE
+  BELOW
+}
+
+model Notification {
+  id            String        @id @default(uuid())
+  baseCurrency  String
+  quoteCurrency String
+  targetRate    Decimal
+  direction     CoinDirection
+  triggeredAt   DateTime?
+  isActive      Boolean       @default(true)
+  createdAt     DateTime      @default(now())
+  updatedAt     temporal.updatedAt()
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([baseCurrency, quoteCurrency], where: "(\"isActive\" = true)", name: "notification_pair_active")
+  @@index([userId, baseCurrency, quoteCurrency, direction, targetRate],
+          unique: true, where: "(\"isActive\" = true)", name: "notification_user_alert_active")
+  @@check(expression: "\"targetRate\" > 0", name: "notification_rate_positive")
+  @@check(expression: "\"baseCurrency\" <> \"quoteCurrency\"", name: "notification_pair_distinct")
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  name         String
+  passwordHash String
+  phoneNumber  String?
+  createdAt    DateTime @default(now())
+}
