@@ -1,0 +1,58 @@
+generator client {
+  provider        = "prisma-client"
+  output          = "../src/generated/prisma"
+  previewFeatures = ["partialIndexes"]
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Alert {
+  id            String    @id @default(uuid())
+  baseCurrency  String
+  quoteCurrency String
+  targetRate    Decimal   @db.Decimal
+  direction     String
+  triggeredAt   DateTime? @db.Timestamptz(6)
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt     DateTime  @updatedAt @db.Timestamptz(6)
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId], map: "alert_userId_idx_a489d58a")
+  @@index([baseCurrency, quoteCurrency], where: raw("(\"isActive\" = true)"), map: "alert_pair_active_331cc7d1")
+  @@unique([userId, baseCurrency, quoteCurrency, direction, targetRate], where: raw("(\"isActive\" = true)"), map: "alert_user_alert_active_5b2336d6")
+  @@map("alert")
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique(map: "user_email_key")
+  name         String
+  passwordHash String
+  phoneNumber  String?
+  createdAt    DateTime @default(now()) @db.Timestamptz(6)
+
+  alerts        Alert[]
+  refreshTokens RefreshToken[]
+
+  @@map("user")
+}
+
+model RefreshToken {
+  id        String    @id @default(uuid())
+  tokenHash String    @unique(map: "refreshToken_tokenHash_key")
+  expiresAt DateTime  @db.Timestamptz(6)
+  revokedAt DateTime? @db.Timestamptz(6)
+  createdAt DateTime  @default(now()) @db.Timestamptz(6)
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId], map: "refreshToken_userId_idx_a489d58a")
+  @@index([expiresAt], map: "refreshToken_expiresAt_idx_6b6b8c10")
+  @@map("refreshToken")
+}
