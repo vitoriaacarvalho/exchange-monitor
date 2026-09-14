@@ -27,13 +27,56 @@ yet. This migration is about as cheap as it will ever be.
 
 **Scope**
 
-- [ ] `prisma@7.10.0` + `@prisma/client@7.10.0` + `@prisma/adapter-pg`
-- [ ] `prisma/schema.prisma` replacing `src/prisma/contract.prisma`
-- [ ] `prisma.config.ts` rewritten for v7
-- [ ] Baseline migration against the existing database (no data loss)
-- [ ] `src/prisma/db.ts` on the driver adapter
-- [ ] `error-handler.ts` on `PrismaClientKnownRequestError`
-- [ ] Prisma Next artefacts removed
+- [x] `prisma@7.10.0` + `@prisma/client@7.10.0` + `@prisma/adapter-pg`
+- [x] `prisma/schema.prisma` replacing `src/prisma/contract.prisma`
+- [x] `prisma.config.ts` rewritten for v7
+- [x] Baseline migration against the existing database (no data loss)
+- [x] `src/prisma/db.ts` on the driver adapter
+- [x] `error-handler.ts` on `PrismaClientKnownRequestError`
+- [~] Prisma Next artefacts removed — files and migrations gone; `.claude/skills/`
+      and the `prisma_contract` schema still pending (see "Applied" below)
+
+---
+
+## Applied 2026-09-14
+
+Everything above held up, with two exceptions worth recording.
+
+**Step 16 cannot use `migrate dev` here.** The `exchange_watch` role has
+neither `CREATEDB` nor superuser, and `migrate dev` builds a shadow database
+first — it fails with `P3014` before generating anything. The FK migration was
+instead generated with `migrate diff --from-config-datasource --to-schema` and
+applied with `migrate deploy`, which needs no shadow database. The resulting
+migration is byte-for-byte the four statements step 16 predicted.
+
+This is not specific to the baseline: **`yarn db:migrate` will fail the same
+way on the next schema change.** The durable fix is one grant from a superuser:
+
+```sql
+ALTER ROLE exchange_watch CREATEDB;
+```
+
+Pointing `shadowDatabaseUrl` at an existing database is not an alternative —
+Prisma resets whatever it is given.
+
+**Step 20's import does not exist.** `PrismaClientKnownRequestError` is not a
+top-level export of the generated `client.ts`; it lives on the `Prisma`
+namespace. The working form is:
+
+```ts
+import { Prisma } from '../generated/prisma/client.ts';
+// Prisma.PrismaClientKnownRequestError
+```
+
+Also confirmed while applying: all three tables were **empty**, so decision 3
+and step 11's data-loss traps were theoretical on this database — the schema
+still had to match, and did. Step 28's probe passed on every row, including
+`P2003` carrying `constraint.index` structurally (the plan only promised it for
+`P2002`). Step 27's diff showed the two foreign keys and nothing else.
+
+Two cleanup steps are **still outstanding**, both blocked by the sandbox rather
+than by anything technical: deleting the gitignored `backend/.claude/skills/`
+(step 23's last bullet) and `DROP SCHEMA prisma_contract CASCADE` (step 24).
 
 ---
 

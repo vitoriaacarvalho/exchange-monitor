@@ -60,11 +60,6 @@ export type RefreshTokenParts = {
 /**
  * The token is 256 bits of entropy, so sha256 is enough to store it by — there
  * is nothing to brute-force, and argon2's cost would be paid on every refresh.
- *
- * `expiresAt` is a `Date`, but the `refreshToken.expiresAt` column's codec
- * (`pg/timestamptz-temporal@1`) encodes *only* a `Temporal.Instant` — verified
- * by probing. The service converts at the one place it writes the row, which
- * keeps this module usable without `--harmony-temporal`.
  */
 export function generateRefreshToken(): RefreshTokenParts {
   const token = randomBytes(32).toString('base64url');

@@ -173,37 +173,43 @@ string, and only the controller knows it becomes a cookie (step 19).
 
 ## Phase 1 — Schema
 
-4. Add to `src/prisma/contract.prisma`:
+4. Add to `prisma/schema.prisma`:
 
    ```prisma
    model RefreshToken {
      id        String    @id @default(uuid())
-     tokenHash String    @unique
-     expiresAt DateTime
-     revokedAt DateTime?
-     createdAt DateTime  @default(now())
+     tokenHash String    @unique(map: "refreshToken_tokenHash_key")
+     expiresAt DateTime  @db.Timestamptz(6)
+     revokedAt DateTime? @db.Timestamptz(6)
+     createdAt DateTime  @default(now()) @db.Timestamptz(6)
 
      userId String
      user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-     @@index([userId])
-     @@index([expiresAt])
+     @@index([userId], map: "refreshToken_userId_idx_a489d58a")
+     @@index([expiresAt], map: "refreshToken_expiresAt_idx_6b6b8c10")
+     @@map("refreshToken")
    }
    ```
 
    `onDelete: Cascade` matches `Alert` — deleting a user takes their sessions
    with them. The `expiresAt` index is for the cleanup sweep in step 22.
+   `@@map`, the `map:` names and `@db.Timestamptz(6)` are all load-bearing; see
+   decisions 3 and 4 of [prisma-7-migration-plan.md](prisma-7-migration-plan.md).
+   `User` also needs the `refreshTokens` back-relation — Prisma 7 requires both
+   sides.
 
 5. Migrate:
    ```bash
-   yarn prisma contract emit
-   yarn prisma migration plan --name add_refresh_tokens
-   yarn prisma db migrate --db $DATABASE_URL
+   yarn prisma migrate dev --name add_refresh_tokens
    ```
-   Inspect the generated `migrations/app/<ts>_add_refresh_tokens/migration.ts`
-   before applying — this one should be a pure additive create, no
-   `placeholder(...)` slots to fill. If there are placeholders, something else
-   drifted; stop and read them.
+   Read the generated `prisma/migrations/<ts>_add_refresh_tokens/migration.sql`
+   before it applies — this one should be a pure additive create.
+
+   Note: `migrate dev` builds a shadow database, and the `exchange_watch` role
+   has no `CREATEDB`, so it fails with `P3014` until that is granted. Until
+   then the equivalent is `migrate diff --from-config-datasource --to-schema`
+   into a hand-made migration folder, applied with `migrate deploy`.
 
 6. **Do not** add `passwordHash`-adjacent fields speculatively. But note for
    later: the moment you add OAuth or magic links, `passwordHash` has to become
@@ -281,15 +287,15 @@ pieces most worth unit-testing later.
     appear in a response.** Build the object field-by-field; never `...user` and
     then `delete`, because the next schema field you add gets leaked by default.
 
-14. **`src/services/auth.service.ts`** — the only auth file importing `db`.
+14. **`src/services/auth.service.ts`** — the only auth file importing `prisma`.
 
     | Function | Behaviour |
     | --- | --- |
-    | `register(input)` | hash password → `db.orm.User.create({ ...input, passwordHash })` → issue token pair |
-    | `login(email, password)` | `db.orm.User.where({ email }).first()` → verify → issue token pair |
+    | `register(input)` | hash password → `prisma.user.create({ data: { ...input, passwordHash } })` → issue token pair |
+    | `login(email, password)` | `prisma.user.findUnique({ where: { email } })` → verify → issue token pair |
     | `refresh(token)` | look up by `tokenHash`, validate, **rotate** (revoke old, create new), issue new pair |
     | `logout(token)` | set `revokedAt` on the matching row |
-    | `getMe(userId)` | `db.orm.User.first({ id: userId })`, mapped |
+    | `getMe(userId)` | `prisma.user.findUnique({ where: { id: userId } })`, mapped |
 
     Factor the "issue token pair" tail into a private
     `issueSession(userId)` that signs the access token, generates the refresh
@@ -382,8 +388,10 @@ pieces most worth unit-testing later.
     cheap sha256 lookup, and a tight limit would log out anyone with several
     tabs open.
 
-22. **Expired-token cleanup.** `DELETE FROM "RefreshToken" WHERE "expiresAt" < now()`
-    on a schedule. A `setInterval` in `server.ts` running daily is fine for now;
+22. **Expired-token cleanup.**
+    `prisma.refreshToken.deleteMany({ where: { expiresAt: { lt: new Date() } } })`
+    on a schedule — with plain `Date`s this is expressible in the ORM and needs
+    no raw SQL. A `setInterval` in `server.ts` running daily is fine for now;
     note it as a cron candidate when deployment is real.
 
 ## Phase 6 — Verify

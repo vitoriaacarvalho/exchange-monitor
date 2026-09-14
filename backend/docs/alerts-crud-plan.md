@@ -21,18 +21,23 @@ Express 5 + Prisma Next (Prisma 8 RC) setup.
 **1. `Notification` model ↔ `/alerts` route.** The model is `Notification`, the
 resource is `alerts`. Keep the DB name as-is and treat "alert" as the API-layer
 name. Everything from the controller outward says *alert*; only the service
-touches `db.orm.Notification`. The mapper is the seam where the rename happens.
+touches `prisma.alert`. The mapper is the seam where the rename happens.
 
-**2. `userId` is required and there is no auth yet.** `src/prisma/contract.prisma`
+**2. `userId` is required and there is no auth yet.** `prisma/schema.prisma`
 makes `userId` non-nullable, so every endpoint needs a user. Don't inline
 `req.headers['x-user-id']` into controllers — build a tiny `currentUser`
 middleware that sets `req.userId`, backed by a header for now. When JWT lands
 you swap the middleware body and nothing else changes.
 
-**3. `targetRate` is a Postgres `numeric`.** Prisma Next reads numerics as
-**decimal strings**, not JS numbers. Accept number-or-string on input, normalize
-to string, return string. Never round-trip through `parseFloat` — exchange rates
-are exactly why the column is `Decimal`.
+**3. `targetRate` is a Postgres `numeric`.** Prisma 7 reads it as a `Decimal`
+*object*. Accept number-or-string on input, normalize to string, return string.
+Never round-trip through `parseFloat` — exchange rates are exactly why the
+column is `Decimal`.
+
+The mapper must call **`.toFixed()`**, never `.toString()`: verified, a
+`targetRate` of `0.00000001` stringifies to `"1e-8"` via `.toString()` and
+`"0.00000001"` via `.toFixed()`. An exchange rate rendered in exponential
+notation is a bug that reaches the frontend intact.
 
 **4. PATCH scope.** Allow `targetRate`, `direction`, `isActive` only. Changing
 `baseCurrency`/`quoteCurrency` turns an alert into a different alert and
@@ -43,14 +48,12 @@ re-opens the partial-unique-index question — make that a POST + DELETE instead
 ## Phase 0 — Groundwork
 
 1. `yarn add zod` (not currently a dependency).
-2. Confirm tables exist: `yarn prisma migration status`; run `yarn prisma db init`
-   if the schema was never pushed.
-3. Smoke-test the ORM in a scratch script — one `db.orm.User.create(...)` and one
-   `db.orm.Notification.create(...)` — to **verify two things the plan assumes**:
-   the JS type of `targetRate` on read (expected: string) and of
-   `createdAt`/`updatedAt` (the contract uses `pg/timestamptz-temporal@1`, which
-   may hand back a Temporal object rather than a `Date` — that decides whether
-   your mapper calls `.toISOString()` or `.toString()`). Delete the script after.
+2. Confirm tables exist and nothing has drifted: `yarn prisma migrate status`.
+3. Both read types this plan assumes are already settled — verified by probing
+   during the Prisma 7 migration, so there is no smoke test left to run here:
+   `targetRate` is a `Decimal` object the mapper renders with `.toFixed()`
+   (decision 3), and `createdAt`/`updatedAt` are plain `Date`s, so the mapper
+   calls `.toISOString()`.
 
 ## Phase 1 — Shared infrastructure
 
@@ -123,18 +126,18 @@ that instead if you expect several more resources; for one entity plus a future
   (coerced int, default 20, max 100) and `cursor`.
 - Export inferred types (`CreateAlertInput`, etc.) for the service signatures.
 
-### 10. `services/alert.service.ts` — the only file importing `db`
+### 10. `services/alert.service.ts` — the only file importing `prisma`
 
 Five functions, each taking `userId` as its first argument so scoping can't be
 forgotten:
 
 | Function | Query |
 | --- | --- |
-| `createAlert(userId, input)` | `db.orm.Notification.create({ ...input, userId })` |
-| `listAlerts(userId, filters)` | chained `.where()` clauses (one per active filter — they AND-compose), `.orderBy(n => n.createdAt.desc())`, `.limit(limit + 1)` to detect a next page, `.all()` |
-| `getAlertById(userId, id)` | `.where({ id, userId }).first()`, throws `notFound` on null |
-| `updateAlert(userId, id, input)` | `.where({ id, userId }).update(input)`; empty result means 404 |
-| `deleteAlert(userId, id)` | `.where({ id, userId }).delete()`; zero rows means 404 |
+| `createAlert(userId, input)` | `prisma.alert.create({ data: { ...input, userId } })` |
+| `listAlerts(userId, filters)` | `prisma.alert.findMany({ where: { userId, ...filters }, orderBy: { createdAt: 'desc' }, take: limit + 1 })` — one extra row to detect a next page |
+| `getAlertById(userId, id)` | `prisma.alert.findFirst({ where: { id, userId } })`, throws `notFound` on null |
+| `updateAlert(userId, id, input)` | `prisma.alert.updateMany({ where: { id, userId }, data: input })`; `count === 0` means 404 |
+| `deleteAlert(userId, id)` | `prisma.alert.deleteMany({ where: { id, userId } })`; `count === 0` means 404 |
 
 **Always include `userId` in the predicate** — a bare `.first({ id })` would let
 one user read another's alert.
