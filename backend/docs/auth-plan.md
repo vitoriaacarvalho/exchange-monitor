@@ -13,12 +13,12 @@ routes → controllers → services, with Zod at the edge.
 
 - [x] `User` model
 - [x] `RefreshToken` model + migration
-- [ ] `POST /auth/register`
-- [ ] `POST /auth/login`
-- [ ] `POST /auth/refresh`
-- [ ] `POST /auth/logout`
-- [ ] `GET /auth/me`
-- [ ] `requireAuth` middleware (replaces the `x-user-id` stopgap)
+- [x] `POST /auth/register`
+- [x] `POST /auth/login`
+- [x] `POST /auth/refresh`
+- [x] `POST /auth/logout`
+- [x] `GET /auth/me`
+- [x] `requireAuth` middleware (replaces the `x-user-id` stopgap)
 
 ---
 
@@ -461,9 +461,11 @@ pieces most worth unit-testing later.
 
 ## Open questions
 
-1. **Refresh-token reuse policy (step 16)** — revoke just the replayed token, or
-   every session for that user? The second is safer and will occasionally log
-   someone out for no visible reason.
+1. ~~**Refresh-token reuse policy (step 16)**~~ — **answered: revoke every
+   session for that user.** A replayed token means the old value leaked, so the
+   holder of the current one may not be the legitimate user. The cost is real:
+   a replay logs the user out of every device with no visible cause. Flip it by
+   deleting the `updateMany` in `refresh`'s `revokedAt` branch.
 2. **Email verification.** Not in scope here, and it needs a mail provider. But
    it's worth deciding *now* whether `User` will eventually grow an
    `emailVerifiedAt` column, because adding it after you have real users means a
