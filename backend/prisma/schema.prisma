@@ -8,12 +8,17 @@ datasource db {
   provider = "postgresql"
 }
 
+enum Direction {
+  ABOVE
+  BELLOW
+}
+
 model Alert {
   id            String    @id @default(uuid())
   baseCurrency  String
   quoteCurrency String
   targetRate    Decimal   @db.Decimal
-  direction     String
+  direction     Direction
   triggeredAt   DateTime? @db.Timestamptz(6)
   isActive      Boolean   @default(true)
   createdAt     DateTime  @default(now()) @db.Timestamptz(6)
