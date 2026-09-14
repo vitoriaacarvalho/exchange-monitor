@@ -3,7 +3,7 @@ import 'express';
 declare global {
   namespace Express {
     interface Request {
-      /** Set by the `currentUser` middleware. Read it through `requireUserId(req)`. */
+      /** Set by the `requireAuth` middleware. Read it through `requireUserId(req)`. */
       userId?: string;
     }
 
