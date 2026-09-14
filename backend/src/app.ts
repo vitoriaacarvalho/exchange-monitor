@@ -1,14 +1,23 @@
+import cookieParser from 'cookie-parser';
+import cors from 'cors';
 import express from 'express';
 import { errorHandler } from './middlewares/error-handler.js';
+import { authRoutes } from './routes/auth.routes.js';
 import { notFound } from './shared/http-error.js';
-
-// Importing the config is what validates the environment, so a bad variable
-// fails the boot rather than the first request.
-import './config/env.js';
+import { env } from './config/env.js';
 
 const app = express();
 
+// An explicit origin, because a wildcard is illegal alongside credentials. The
+// SPA must send `credentials: 'include'` on every /auth call or it will get a
+// token and silently drop the cookie.
+app.use(cors({ origin: env.CORS_ORIGIN, credentials: true }));
+
 app.use(express.json());
+
+// Must precede the /auth router: without it `req.cookies` is undefined, and
+// reading a property off undefined is a 500 where a 401 was wanted.
+app.use(cookieParser());
 
 app.get('/health', (_req, res) => {
   res.status(200).json({
@@ -16,7 +25,9 @@ app.get('/health', (_req, res) => {
   });
 });
 
-// app.use('/alerts', alertRoutes);  <- Phase 2 (docs/alerts-crud-plan.md)
+app.use('/auth', authRoutes);
+
+// app.use('/alerts', alertRoutes);  <- docs/alerts-crud-plan.md
 
 // Forwarded as an error so an unknown path gets the same body shape as every
 // other failure.
