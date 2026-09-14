@@ -1,9 +1,14 @@
-import 'dotenv/config';
-import postgres from '@prisma/orm-postgres/runtime';
-import type { Contract } from './contract.d';
-import contractJson from './contract.json' with { type: 'json' };
+import { PrismaPg } from '@prisma/adapter-pg';
+import { PrismaClient } from '../generated/prisma/client.ts';
+import { env } from '../config/env.js';
 
-export const db = postgres<Contract>({
-  contractJson,
-  url: process.env['DATABASE_URL']!,
+/**
+ * The `.ts` extension is what the generated client's own imports use; the build
+ * rewrites it to `.js` (`rewriteRelativeImportExtensions` in tsconfig).
+ *
+ * Prisma 7 takes the connection through a driver adapter rather than a `url` in
+ * the schema, which is no longer permitted there.
+ */
+export const prisma = new PrismaClient({
+  adapter: new PrismaPg({ connectionString: env.DATABASE_URL }),
 });
