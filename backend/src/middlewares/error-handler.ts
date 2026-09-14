@@ -1,7 +1,8 @@
 import type { ErrorRequestHandler } from 'express';
 import { z, ZodError } from 'zod';
 import { env } from '../config/env.js';
-import { conflict, HttpError, unprocessable } from '../shared/http-error.js';
+import { Prisma } from '../generated/prisma/client.ts';
+import { conflict, HttpError, notFound, unprocessable } from '../shared/http-error.js';
 
 /**
  * The terminal error middleware. Every response it writes has the shape
@@ -9,72 +10,55 @@ import { conflict, HttpError, unprocessable } from '../shared/http-error.js';
  */
 
 /**
- * Matched structurally rather than with `instanceof`: the driver's
- * `SqlQueryError` lives in `@prisma/orm-family-sql`, a transitive dependency,
- * so importing it would pin us to the package layout of a release candidate.
- * The runtime's own `SqlQueryError.is()` is this same `kind` check.
+ * Prisma 7 puts the driver's own error under `meta.driverAdapterError`. Only
+ * unique (`P2002`) and foreign-key (`P2003`) violations carry the constraint
+ * name structurally — verified by probing; for a check constraint it is in the
+ * message text alone.
  */
-type SqlQueryErrorLike = {
-  kind: 'sql_query';
-  sqlState?: string;
-  constraint?: string;
-  table?: string;
-  column?: string;
+type PrismaDriverCause = {
+  constraint?: { index?: string };
+  originalMessage?: string;
   detail?: string;
 };
 
-function isSqlQueryError(error: unknown): error is SqlQueryErrorLike {
+function driverCause(error: Prisma.PrismaClientKnownRequestError): PrismaDriverCause {
   return (
-    typeof error === 'object' &&
-    error !== null &&
-    (error as { kind?: unknown }).kind === 'sql_query'
+    (error.meta as { driverAdapterError?: { cause?: PrismaDriverCause } } | undefined)
+      ?.driverAdapterError?.cause ?? {}
   );
 }
 
-/** The ORM's middleware wraps driver errors, so the one we want is rarely the one we're handed. */
-function findSqlQueryError(error: unknown, depth = 0): SqlQueryErrorLike | undefined {
-  if (depth > 5 || typeof error !== 'object' || error === null) return undefined;
-  if (isSqlQueryError(error)) return error;
-  return findSqlQueryError((error as { cause?: unknown }).cause, depth + 1);
-}
-
-/**
- * Constraint names as Postgres actually stores them, which is not what
- * `contract.prisma` calls them: the emitter appends an 8-hex suffix to every
- * authored name. Verified against the live database. Stripping the suffix
- * survives a re-emit.
- */
-const CONSTRAINT_HASH_SUFFIX = /_[0-9a-f]{8}$/;
-
-const CONSTRAINT_RULES: Record<string, () => HttpError> = {
-  alert_user_alert_active: () =>
+const UNIQUE_CONSTRAINT_RULES: Record<string, () => HttpError> = {
+  alert_user_alert_active_5b2336d6: () =>
     conflict('an active alert for this pair, direction and target rate already exists'),
-  alert_rate_positive: () => unprocessable('targetRate must be greater than zero'),
-  alert_pair_distinct: () => unprocessable('baseCurrency and quoteCurrency must be different'),
+  user_email_key: () => conflict('an account with this email already exists'),
 };
 
-const SQLSTATE_RULES: Record<string, () => HttpError> = {
-  '23505': () => conflict('a record with these values already exists'),
-  '23503': () => unprocessable('a referenced record does not exist'),
-  '23514': () => unprocessable('a value in the request violates a database constraint'),
-  '23502': () => unprocessable('a required value is missing'),
-};
+function translatePrismaError(error: Prisma.PrismaClientKnownRequestError): HttpError | undefined {
+  const { constraint } = driverCause(error);
 
-function translateSqlError(error: SqlQueryErrorLike): HttpError | undefined {
-  const baseName = error.constraint?.replace(CONSTRAINT_HASH_SUFFIX, '');
-  const rule = (baseName && CONSTRAINT_RULES[baseName]) ?? SQLSTATE_RULES[error.sqlState ?? ''];
+  switch (error.code) {
+    case 'P2002': {
+      const rule = constraint?.index && UNIQUE_CONSTRAINT_RULES[constraint.index];
+      return rule ? rule() : conflict('a record with these values already exists');
+    }
+    case 'P2003':
+      return unprocessable('a referenced record does not exist');
 
-  if (!rule) return undefined;
+    // Deliberately generic: a check constraint reaching Postgres means a Zod
+    // schema failed to mirror it, so the specific wording belongs at the edge,
+    // not here. The constraint name is only in the message text (verified) and
+    // is not worth a regex.
+    case 'P2039':
+      console.warn('[error-handler] check constraint reached the database');
+      return unprocessable('a value in the request violates a database constraint');
 
-  // A check constraint reaching Postgres means a Zod schema failed to mirror it.
-  if (error.sqlState === '23514') {
-    console.warn('[error-handler] check constraint reached the database', {
-      constraint: error.constraint,
-      table: error.table,
-    });
+    case 'P2025':
+      return notFound();
+
+    default:
+      return undefined;
   }
-
-  return rule();
 }
 
 /** `express.json()` rejects malformed or oversized payloads with `status` and `expose: true`. */
@@ -123,18 +107,19 @@ export const errorHandler: ErrorRequestHandler = (error, _req, res, next) => {
     return;
   }
 
-  const sqlError = findSqlQueryError(error);
-  if (sqlError) {
-    const translated = translateSqlError(sqlError);
+  if (error instanceof Prisma.PrismaClientKnownRequestError) {
+    const translated = translatePrismaError(error);
 
     if (translated) {
+      const cause = driverCause(error);
+
       // `detail` is logged but never forwarded: Postgres puts the offending key
       // — or the whole failing row, including other users' values — in it.
-      console.warn('[error-handler] constraint violation', {
-        sqlState: sqlError.sqlState,
-        constraint: sqlError.constraint,
-        table: sqlError.table,
-        detail: sqlError.detail,
+      console.warn('[error-handler] prisma constraint violation', {
+        code: error.code,
+        constraint: cause.constraint?.index,
+        originalMessage: cause.originalMessage,
+        detail: cause.detail,
       });
 
       res.status(translated.statusCode).json({ error: { message: translated.message } });
