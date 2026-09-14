@@ -10,45 +10,160 @@ treat as open are now settled: the data layer is Prisma 7 with plain `Date`s and
 `P2xxx` error codes, and **auth is done** — there is no `x-user-id` stopgap to
 build, because `requireAuth` already exists and the stopgap has been deleted.
 
+Decisions revisited the same day: `direction` became a native Postgres enum
+(decision 1, which reverses decision 6 of the migration plan), and decisions 2–4
+are locked as written. **Built and verified the same day — see
+[Applied](#applied-2026-09-14).**
+
 **Scope**
 
 - [x] `Alert` model
 - [x] Shared infrastructure (Phase 1 — landed with the auth work)
-- [ ] `POST /alerts`
-- [ ] `GET /alerts`
-- [ ] `GET /alerts/:id`
-- [ ] `PATCH /alerts/:id`
-- [ ] `DELETE /alerts/:id`
-- [ ] Zod schemas for the above
+- [x] `POST /alerts`
+- [x] `GET /alerts`
+- [x] `GET /alerts/:id`
+- [x] `PATCH /alerts/:id`
+- [x] `DELETE /alerts/:id`
+- [x] Zod schemas for the above
+
+---
+
+## Applied 2026-09-14
+
+Five files, mounted at `/alerts` in [`app.ts`](../src/app.ts):
+[`schemas/alert.schema.ts`](../src/schemas/alert.schema.ts),
+[`services/alert.service.ts`](../src/services/alert.service.ts),
+[`mappers/alert.mapper.ts`](../src/mappers/alert.mapper.ts),
+[`controllers/alert.controller.ts`](../src/controllers/alert.controller.ts),
+[`routes/alert.routes.ts`](../src/routes/alert.routes.ts). `yarn typecheck`
+passes and 34 request-level checks pass with no 500 in the log. Four things the
+plan did not predict:
+
+**`req.params.id` is `string | string[]` in Express 5.** Reading it against the
+default `RequestHandler` does not compile. The fix is to hand the handler the
+schema's own inferred type — `RequestHandler<AlertIdParam, unknown,
+UpdateAlertInput>` — which also removes the body casts, and is sound exactly
+because the matching `validate(...)` runs on every route. Handlers with no route
+params take `never`, since `unknown` is not assignable to Express's
+`ParamsDictionary` and breaks `requireUserId(req)`.
+
+**Step 9's "coerced boolean" would have been a bug.** `z.coerce.boolean()` is
+`Boolean(value)`, so the string `"false"` — the only way a query string can
+spell it — parses as `true`. `?isActive=false` would have returned active
+alerts. `z.enum(['true', 'false']).transform(v => v === 'true')` is what the
+schema uses.
+
+**Cursor pagination needs a tiebreaker.** `orderBy: { createdAt: 'desc' }` alone
+is not a total order; two alerts created in the same millisecond can swap places
+between requests, and a cursor into an unstable order skips or repeats rows. The
+service orders by `[{ createdAt: 'desc' }, { id: 'desc' }]`.
+
+**A JSON number cannot always carry the rate.** `decimalString` accepts
+`number | string`, but a number small enough to need exponent notation
+(`1e-8`) stringifies as `"1e-8"` and is rejected with a message telling the
+client to send a string — the alternative was storing an exchange rate in
+exponential form, which is the bug decision 3 exists to prevent. Sent as
+`"0.00000001"`, it round-trips exactly.
+
+Two smaller notes. The mapper runs in the controller, as step 13 says, so the
+service returns rows — that differs from `auth.service.ts`, which maps inside
+the service because it composes tokens into the same result. And `migrate dev`
+refuses to run non-interactively, so the rename migration was written by hand
+and applied with `migrate deploy`; `--create-only` is no escape hatch, it needs
+a TTY too.
 
 ---
 
 ## Decisions
 
-**1. `direction` is a `String` column, not a Prisma enum.** Prisma Next modelled
-it as text plus a CHECK constraint, and the Prisma 7 migration kept that rather
-than doing a `USING` cast to a native Postgres enum (decision 6 of the migration
-plan). Consequence for this plan: **the Zod schema is the only place the union
-exists**, so derive the TypeScript type from it rather than importing one from
-the generated client:
+**1. `direction` is a native Postgres enum.** Changed 2026-09-14, reversing
+decision 6 of the migration plan, which had kept the text column. The schema now
+declares
 
-```ts
-export const directionSchema = z.enum(['ABOVE', 'BELOW']);
-export type Direction = z.infer<typeof directionSchema>;
+```prisma
+enum Direction {
+  ABOVE
+  BELOW
+  EQUAL
+}
 ```
 
-`alert_direction_check_134ec2b3` is the database-level backstop. If it ever
-fires, Zod let something through.
+created by [`20260914174147_create_direction_enum`](../prisma/migrations/20260914174147_create_direction_enum/migration.sql)
+and widened with `EQUAL` by [`20260914174328_update_direction_enum`](../prisma/migrations/20260914174328_update_direction_enum/migration.sql).
+The label first shipped as `BELLOW` and was corrected in place by
+[`20260914184013_rename_direction_bellow_to_below`](../prisma/migrations/20260914184013_rename_direction_bellow_to_below/migration.sql).
+Three consequences, all verified against the dev database:
 
-**2. Ownership goes in the `where`, and a miss is a 404.** Verified against
-Prisma 7: `update({ where: { id, userId } })` accepts the non-unique filter
-alongside the unique `id`, **returns the updated row**, and throws `P2025` when
-the id belongs to someone else. `delete` behaves the same way.
+- **`alert_direction_check_134ec2b3` is gone.** No cast exists from `text` to a
+  new enum type, so the migration dropped and recreated the column — and the
+  CHECK constraint went with it (as did `alert_user_alert_active_5b2336d6`,
+  which the same migration recreates). `\d alert` now lists two check
+  constraints, not three. The enum type itself is the database-level backstop.
 
-That is worth knowing because it collapses what would otherwise be three steps
-(`updateMany` → check `count` → re-read to return the row) into one query, and
-because the error handler already maps `P2025` to 404 — which is the answer this
-plan wants anyway, since a 403 would confirm the id exists.
+- **The union has one source of truth, and it is the generated client.** Feed it
+  to Zod instead of retyping the values:
+
+  ```ts
+  import { Direction } from '../generated/prisma/enums.ts';
+
+  export const directionSchema = z.enum(Direction);
+  export type Direction = z.infer<typeof directionSchema>;
+  ```
+
+  Zod 4's `z.enum()` takes the generated const object directly — `z.nativeEnum`
+  is its deprecated predecessor, don't reach for it. Verified: `.options` comes
+  back as `['ABOVE', 'BELOW', 'EQUAL']`, so a fourth value costs a migration
+  and a `prisma generate`, and nothing in `src/` changes.
+
+- **An unknown value is now a 500, not a 422, unless Zod stops it first.** With
+  the old text column a bad direction reached Postgres and came back as `P2039`
+  → 422. Now the client rejects it before any SQL runs, and it throws
+  `PrismaClientValidationError` — which carries no `code` and is _not_ a
+  `PrismaClientKnownRequestError`, so `translatePrismaError` never sees it and
+  the error handler's final branch logs it as a 500. That is the right outcome:
+  since `directionSchema` is derived from the same generated enum, the two
+  cannot drift, and a 500 here means step 9 is wired wrong — a louder signal
+  than a 422. **Zod is load-bearing now, not a nicety.**
+
+**2. Ownership goes in the `where`, and a miss is a 404.** Two claims, both
+re-verified on 2026-09-14 by writing two users and one alert to the dev database
+and trying each other's ids.
+
+_The mechanism._ `update` and `delete` used to accept only unique fields in
+`where`. They now accept extra non-unique filters alongside the unique one, so
+`where: { id, userId }` is legal, **returns the updated row**, and throws `P2025`
+when that pair matches nothing. Without it, enforcing ownership takes three
+statements:
+
+```ts
+// what you'd otherwise write
+const { count } = await prisma.alert.updateMany({ where: { id, userId }, data });
+if (count === 0) throw notFound();
+return prisma.alert.findFirst({ where: { id, userId } }); // updateMany returns no rows
+```
+
+```ts
+// what the scoped where buys you
+return prisma.alert.update({ where: { id, userId }, data });
+```
+
+The saving is not brevity, it is atomicity: the three-statement version has a gap
+between the check and the re-read in which the row can be deleted, and then it
+either 404s something it just updated or returns a row that no longer exists.
+`findUnique` accepts the same extra filter and returns `null` rather than
+throwing — but `findFirst` is what step 10 uses, because a non-unique predicate
+is what it is actually expressing.
+
+_Why 404 and not 403._ Prisma cannot tell "no such id" from "not yours" — both
+are `P2025` — and that ambiguity is the behaviour this plan wants. A 403 would
+answer a question the caller has no right to ask: it confirms the uuid names a
+real alert, which turns `GET /alerts/:id` into an oracle for enumerating other
+people's rows. A 404 leaks nothing. The cost is that a user who genuinely owns
+the alert but sends a stale id sees "not found" rather than something more
+precise; that is the right trade.
+
+The error handler already maps `P2025` → 404, so none of this needs code in the
+alert module — only the discipline of never omitting `userId`.
 
 **Locked:** every query names `userId`, and no endpoint ever distinguishes
 "someone else's alert" from "no such alert".
@@ -63,9 +178,14 @@ The mapper must call **`.toFixed()`**, never `.toString()`: verified, a
 `"0.00000001"` via `.toFixed()`. An exchange rate rendered in exponential
 notation is a bug that reaches the frontend intact.
 
+**Locked** (re-confirmed 2026-09-14 on the enum-migrated schema: a stored
+`0.00000001` still comes back as `Decimal`, `.toString()` still yields `"1e-8"`).
+
 **4. PATCH scope.** Allow `targetRate`, `direction`, `isActive` only. Changing
 `baseCurrency`/`quoteCurrency` turns an alert into a different alert and
 re-opens the partial-unique-index question — make that a POST + DELETE instead.
+
+**Locked.**
 
 ---
 
@@ -75,6 +195,11 @@ re-opens the partial-unique-index question — make that a POST + DELETE instead
    this plan needs.
 
 2. Confirm nothing has drifted: `yarn prisma migrate status`.
+
+   Then **`yarn prisma generate`**. `src/generated/` is gitignored and only
+   rebuilt on `postinstall`, so after the `Direction` migrations it can still be
+   carrying `direction: string | null` and no `Direction` export — in which case
+   every type decision 1 relies on silently isn't there yet.
 
 3. Both read types this plan assumes are already settled — verified by probing
    during the Prisma 7 migration, so there is no smoke test left to run here:
@@ -123,7 +248,9 @@ src/
   the `.regex()`, or pipe into it — `z.email().trim()` silently rejects padded
   input, and the same shape of bug is available here.
 
-- `directionSchema` — `z.enum(['ABOVE', 'BELOW'])` (decision 1).
+- `directionSchema` — `z.enum(Direction)` over the generated enum, **not** a
+  hand-written list of strings (decision 1). This is the only guard between a bad
+  `direction` and a 500.
 - `decimalString` — accepts `number | string`, rejects `NaN`/`Infinity`,
   validates against a decimal regex, **outputs a string**, and enforces `> 0` to
   mirror the `alert_rate_positive_71f5f09d` DB check.
@@ -155,7 +282,10 @@ forgotten:
 
 **Always include `userId` in the predicate.** A bare `findUnique({ where: { id } })`
 would let one user read another's alert, and it is the single most likely bug in
-this module.
+this module. Note the asymmetry decision 2 describes: `update` and `delete`
+_throw_ `P2025` on a miss and so become a 404 with no code of yours, while
+`findFirst` _returns `null`_ — `getAlertById` is the one place that has to throw
+`notFound()` itself.
 
 For cursor pagination, Prisma 7's idiom is
 `{ cursor: { id: cursor }, skip: 1, take: limit + 1 }` — `skip: 1` because the
@@ -186,18 +316,27 @@ object field by field rather than spreading the row, for the same reason
 The error shapes were read, not guessed, during the Prisma 7 migration, and
 [`error-handler.ts`](../src/middlewares/error-handler.ts) already carries them:
 
-| Violation                                                                                        | Prisma code | Current handling                                       |
-| ------------------------------------------------------------------------------------------------ | ----------- | ------------------------------------------------------ |
-| duplicate active alert (`alert_user_alert_active_5b2336d6`)                                      | `P2002`     | **409**, with a message naming the pair/direction/rate |
-| `alert_rate_positive_71f5f09d`, `alert_pair_distinct_e7f2bcc4`, `alert_direction_check_134ec2b3` | `P2039`     | **422**, deliberately generic                          |
-| unknown `userId`                                                                                 | `P2003`     | 422                                                    |
-| row not found / not yours                                                                        | `P2025`     | 404                                                    |
+| Violation                                                      | Prisma code                          | Current handling                                       |
+| -------------------------------------------------------------- | ------------------------------------ | ------------------------------------------------------ |
+| duplicate active alert (`alert_user_alert_active_5b2336d6`)    | `P2002`                              | **409**, with a message naming the pair/direction/rate |
+| `alert_rate_positive_71f5f09d`, `alert_pair_distinct_e7f2bcc4` | `P2039`                              | **422**, deliberately generic                          |
+| unknown `userId`                                               | `P2003`                              | 422                                                    |
+| row not found / not yours                                      | `P2025`                              | 404                                                    |
+| `direction` outside the enum                                   | none — `PrismaClientValidationError` | **500** (see decision 1)                               |
 
-The one thing to know: **`P2039` does not expose which check constraint fired**
-— verified, the name appears only in the driver's message text. So all three
-check violations collapse into one generic 422, and the specific wording has to
-come from Zod (step 9). A `P2039` in the logs is a bug signal: it means a schema
-failed to mirror a constraint.
+Two things to know:
+
+**`P2039` does not expose which check constraint fired** — verified, the name is
+in the driver's message text only. Both remaining check violations collapse into
+one generic 422, and the specific wording has to come from Zod (step 9). A
+`P2039` in the logs is a bug signal: a schema failed to mirror a constraint.
+
+**The last row is new, and it is the enum's doing.** `direction` is no longer a
+text column with a CHECK, so a bad value never reaches Postgres and never gets a
+`P2xxx` code; it is a `PrismaClientValidationError`, which `translatePrismaError`
+does not handle and the final branch logs as a 500. Leave it that way — it is
+unreachable while step 9 holds, and a 500 is the signal you want if it ever
+isn't.
 
 Nothing to add here unless you want a friendlier message for the 409.
 
@@ -252,7 +391,7 @@ marks the spot — after `/auth`, before the 404.
     | `baseCurrency === quoteCurrency` | 422                                                          |
     | `targetRate: -1`                 | 422                                                          |
     | `targetRate: "0.00000001"`       | survives the round-trip as an exact string, **not** `"1e-8"` |
-    | `direction: "SIDEWAYS"`          | 422 from Zod (a `P2039` here means step 9 is wrong)          |
+    | `direction: "SIDEWAYS"`          | 422 from Zod (a **500** here means step 9 is wrong)          |
     | duplicate active alert           | 409                                                          |
     | another user's alert id          | 404 (**not** 403 — don't confirm the id exists)              |
     | malformed uuid                   | 422                                                          |
@@ -281,10 +420,21 @@ because a commit imported a module that arrived in the next one.
 
 ## Open questions
 
-1. **Soft vs hard delete** (step 10). Still genuinely open. The partial unique
-   index argues for soft.
+All three are closed.
 
-2. **Does `GET /alerts` need `triggered` as a filter at all?** It is in the
-   query schema above, but nothing sets `triggeredAt` yet — no price-watching
-   job exists. Consider shipping the filter only once something can populate the
-   column, rather than a parameter that is always a no-op.
+1. **Soft vs hard delete** — **hard**. `DELETE /alerts/:id` removes the row and
+   answers 204. The argument for soft delete was that the partial unique index
+   is scoped `WHERE isActive = true`, so deactivating frees the slot — but
+   `PATCH { isActive: false }` already does exactly that, and having DELETE mean
+   the same thing leaves the API with two spellings of one operation and no way
+   to say "remove this". Verified both halves: deactivating frees the slot for an
+   identical new alert, and DELETE is followed by a 404.
+
+2. **`BELLOW` typo** — **fixed** 2026-09-14, before any client saw it. One
+   migration, `ALTER TYPE "Direction" RENAME VALUE 'BELLOW' TO 'BELOW'`, which
+   rewrites the label without touching rows. `POST` with `"BELLOW"` is now a 422.
+
+3. **`triggered` filter** — **shipped**. It maps to `triggeredAt: { not: null }`
+   / `null` and costs three lines, so the API keeps its shape when a
+   price-watching job eventually populates the column. Until then
+   `?triggered=true` correctly returns nothing.

@@ -2,6 +2,7 @@ import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import express from 'express';
 import { errorHandler } from './middlewares/error-handler.js';
+import { alertRoutes } from './routes/alert.routes.js';
 import { authRoutes } from './routes/auth.routes.js';
 import { notFound } from './shared/http-error.js';
 import { env } from './config/env.js';
@@ -26,8 +27,7 @@ app.get('/health', (_req, res) => {
 });
 
 app.use('/auth', authRoutes);
-
-// app.use('/alerts', alertRoutes);  <- docs/alerts-crud-plan.md
+app.use('/alerts', alertRoutes);
 
 // Forwarded as an error so an unknown path gets the same body shape as every
 // other failure.
