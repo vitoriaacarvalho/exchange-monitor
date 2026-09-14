@@ -8,6 +8,10 @@
       "model": "Alert",
       "namespace": "public"
     },
+    "refreshToken": {
+      "model": "RefreshToken",
+      "namespace": "public"
+    },
     "user": {
       "model": "User",
       "namespace": "public"
@@ -165,6 +169,93 @@
               "table": "alert"
             }
           },
+          "RefreshToken": {
+            "fields": {
+              "createdAt": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "kind": "scalar"
+                }
+              },
+              "expiresAt": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "kind": "scalar"
+                }
+              },
+              "id": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "revokedAt": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "kind": "scalar"
+                }
+              },
+              "tokenHash": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "userId": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              }
+            },
+            "relations": {
+              "user": {
+                "cardinality": "N:1",
+                "on": {
+                  "localFields": [
+                    "userId"
+                  ],
+                  "targetFields": [
+                    "id"
+                  ]
+                },
+                "to": {
+                  "model": "User",
+                  "namespace": "public"
+                }
+              }
+            },
+            "storage": {
+              "fields": {
+                "createdAt": {
+                  "column": "createdAt"
+                },
+                "expiresAt": {
+                  "column": "expiresAt"
+                },
+                "id": {
+                  "column": "id"
+                },
+                "revokedAt": {
+                  "column": "revokedAt"
+                },
+                "tokenHash": {
+                  "column": "tokenHash"
+                },
+                "userId": {
+                  "column": "userId"
+                }
+              },
+              "namespaceId": "public",
+              "table": "refreshToken"
+            }
+          },
           "User": {
             "fields": {
               "createdAt": {
@@ -254,13 +345,13 @@
                 },
                 {
                   "expression": "\"baseCurrency\" <> \"quoteCurrency\"",
-                  "name": "notification_pair_distinct_e7f2bcc4",
-                  "prefix": "notification_pair_distinct"
+                  "name": "alert_pair_distinct_e7f2bcc4",
+                  "prefix": "alert_pair_distinct"
                 },
                 {
                   "expression": "\"targetRate\" > 0",
-                  "name": "notification_rate_positive_71f5f09d",
-                  "prefix": "notification_rate_positive"
+                  "name": "alert_rate_positive_71f5f09d",
+                  "prefix": "alert_rate_positive"
                 }
               ],
               "columns": {
@@ -351,21 +442,21 @@
               "indexes": [
                 {
                   "columns": [
+                    "baseCurrency",
+                    "quoteCurrency"
+                  ],
+                  "name": "alert_pair_active_331cc7d1",
+                  "prefix": "alert_pair_active",
+                  "unique": false,
+                  "where": "(\"isActive\" = true)"
+                },
+                {
+                  "columns": [
                     "userId"
                   ],
                   "name": "alert_userId_idx_a489d58a",
                   "prefix": "alert_userId_idx",
                   "unique": false
-                },
-                {
-                  "columns": [
-                    "baseCurrency",
-                    "quoteCurrency"
-                  ],
-                  "name": "notification_pair_active_331cc7d1",
-                  "prefix": "notification_pair_active",
-                  "unique": false,
-                  "where": "(\"isActive\" = true)"
                 },
                 {
                   "columns": [
@@ -375,8 +466,8 @@
                     "direction",
                     "targetRate"
                   ],
-                  "name": "notification_user_alert_active_5b2336d6",
-                  "prefix": "notification_user_alert_active",
+                  "name": "alert_user_alert_active_5b2336d6",
+                  "prefix": "alert_user_alert_active",
                   "unique": true,
                   "where": "(\"isActive\" = true)"
                 }
@@ -387,6 +478,93 @@
                 ]
               },
               "uniques": []
+            },
+            "refreshToken": {
+              "columns": {
+                "createdAt": {
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "default": {
+                    "expression": "now()",
+                    "kind": "function"
+                  },
+                  "nativeType": "timestamptz",
+                  "nullable": false
+                },
+                "expiresAt": {
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
+                  "nullable": false
+                },
+                "id": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": false
+                },
+                "revokedAt": {
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
+                  "nullable": true
+                },
+                "tokenHash": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": false
+                },
+                "userId": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": false
+                }
+              },
+              "foreignKeys": [
+                {
+                  "onDelete": "cascade",
+                  "source": {
+                    "columns": [
+                      "userId"
+                    ],
+                    "namespaceId": "public",
+                    "tableName": "refreshToken"
+                  },
+                  "target": {
+                    "columns": [
+                      "id"
+                    ],
+                    "namespaceId": "public",
+                    "tableName": "user"
+                  }
+                }
+              ],
+              "indexes": [
+                {
+                  "columns": [
+                    "expiresAt"
+                  ],
+                  "name": "refreshToken_expiresAt_idx_6b6b8c10",
+                  "prefix": "refreshToken_expiresAt_idx",
+                  "unique": false
+                },
+                {
+                  "columns": [
+                    "userId"
+                  ],
+                  "name": "refreshToken_userId_idx_a489d58a",
+                  "prefix": "refreshToken_userId_idx",
+                  "unique": false
+                }
+              ],
+              "primaryKey": {
+                "columns": [
+                  "id"
+                ]
+              },
+              "uniques": [
+                {
+                  "columns": [
+                    "tokenHash"
+                  ]
+                }
+              ]
             },
             "user": {
               "columns": {
@@ -455,10 +633,10 @@
         "kind": "postgres-schema"
       }
     },
-    "storageHash": "0f21ee5e6ad83f27e4731f21e31958945f6698bb32df8092de2fae78ef8c14b0"
+    "storageHash": "3ff272a1be553f2f1f888a8b58dfad087630d3ad09c6a0ceb5798173b345e91b"
   },
   "execution": {
-    "executionHash": "bdd432c887570934e945302d12efd1a2774e01626d061bf2e16bd094e93e27ad",
+    "executionHash": "aaa081802f8f7b8ca9c2464f96eda024f7495ede9dfeda7037e520f8796b888a",
     "mutations": {
       "defaults": [
         {
@@ -485,6 +663,17 @@
             "column": "updatedAt",
             "namespace": "public",
             "table": "alert"
+          }
+        },
+        {
+          "onCreate": {
+            "id": "uuidv4",
+            "kind": "generator"
+          },
+          "ref": {
+            "column": "id",
+            "namespace": "public",
+            "table": "refreshToken"
           }
         },
         {

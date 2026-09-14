@@ -27,6 +27,20 @@ model Alert {
   @@check(expression: "\"baseCurrency\" <> \"quoteCurrency\"", name: "alert_pair_distinct")
 }
 
+model RefreshToken {
+  id        String    @id @default(uuid())
+  tokenHash String    @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
 model User {
   id           String   @id @default(uuid())
   email        String   @unique

@@ -40,18 +40,17 @@ function findSqlQueryError(error: unknown, depth = 0): SqlQueryErrorLike | undef
 
 /**
  * Constraint names as Postgres actually stores them, which is not what
- * `contract.prisma` calls them: the emitter appends an 8-hex suffix, and the
- * `notification_` prefix is a fossil of the rename to `Alert`. Verified
- * against the live database. Stripping the suffix survives a re-emit.
+ * `contract.prisma` calls them: the emitter appends an 8-hex suffix to every
+ * authored name. Verified against the live database. Stripping the suffix
+ * survives a re-emit.
  */
 const CONSTRAINT_HASH_SUFFIX = /_[0-9a-f]{8}$/;
 
 const CONSTRAINT_RULES: Record<string, () => HttpError> = {
-  notification_user_alert_active: () =>
+  alert_user_alert_active: () =>
     conflict('an active alert for this pair, direction and target rate already exists'),
-  notification_rate_positive: () => unprocessable('targetRate must be greater than zero'),
-  notification_pair_distinct: () =>
-    unprocessable('baseCurrency and quoteCurrency must be different'),
+  alert_rate_positive: () => unprocessable('targetRate must be greater than zero'),
+  alert_pair_distinct: () => unprocessable('baseCurrency and quoteCurrency must be different'),
 };
 
 const SQLSTATE_RULES: Record<string, () => HttpError> = {
