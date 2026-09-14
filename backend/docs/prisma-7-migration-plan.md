@@ -447,6 +447,17 @@ layers is confusing but harmless; a tree missing the old one *and* broken is not
     void (decision 2), step 14's `db.orm.*` table becomes `prisma.*`, and step 5's
     migration commands are now `prisma migrate dev`.
 
+    Also correct the docblock on `generateRefreshToken` in
+    [tokens.ts](../src/shared/tokens.ts). Its second paragraph explains that
+    `expiresAt` is a `Date` because the column's codec encodes only a
+    `Temporal.Instant` — after this migration that codec does not exist and the
+    reasoning is simply wrong. The signature does **not** change: `Date` was the
+    right answer for a different reason and is now the native one. Delete the
+    paragraph; keep the sha256 one above it.
+
+    This is the only application comment the migration falsifies. Grep for
+    `Temporal` before calling Phase 6 done.
+
 ## Phase 7 — Verify
 
 26. `yarn typecheck && yarn build`. Both must pass — `build` is the one that
