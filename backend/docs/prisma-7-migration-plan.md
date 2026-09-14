@@ -33,8 +33,8 @@ yet. This migration is about as cheap as it will ever be.
 - [x] Baseline migration against the existing database (no data loss)
 - [x] `src/prisma/db.ts` on the driver adapter
 - [x] `error-handler.ts` on `PrismaClientKnownRequestError`
-- [~] Prisma Next artefacts removed — files and migrations gone; `.claude/skills/`
-      and the `prisma_contract` schema still pending (see "Applied" below)
+- [~] Prisma Next artefacts removed — everything but the `prisma_contract`
+      schema in the database (see "Applied" below)
 
 ---
 
@@ -49,15 +49,21 @@ instead generated with `migrate diff --from-config-datasource --to-schema` and
 applied with `migrate deploy`, which needs no shadow database. The resulting
 migration is byte-for-byte the four statements step 16 predicted.
 
-This is not specific to the baseline: **`yarn db:migrate` will fail the same
-way on the next schema change.** The durable fix is one grant from a superuser:
+**Resolved the same day** by the one grant it needed:
 
 ```sql
 ALTER ROLE exchange_watch CREATEDB;
 ```
 
-Pointing `shadowDatabaseUrl` at an existing database is not an alternative —
-Prisma resets whatever it is given.
+`yarn db:migrate` now builds its shadow database and drops it again, so the
+`migrate diff` + `migrate deploy` route above is only of historical interest —
+it is what the FK migration in this tree was made with. (Pointing
+`shadowDatabaseUrl` at an existing database was never an alternative: Prisma
+resets whatever it is given.)
+
+Note that `migrate dev --create-only` prompts for a migration name even when
+nothing is pending — it is offering to scaffold an empty migration, not
+reporting drift.
 
 **Step 20's import does not exist.** `PrismaClientKnownRequestError` is not a
 top-level export of the generated `client.ts`; it lives on the `Prisma`
@@ -74,9 +80,9 @@ still had to match, and did. Step 28's probe passed on every row, including
 `P2003` carrying `constraint.index` structurally (the plan only promised it for
 `P2002`). Step 27's diff showed the two foreign keys and nothing else.
 
-Two cleanup steps are **still outstanding**, both blocked by the sandbox rather
-than by anything technical: deleting the gitignored `backend/.claude/skills/`
-(step 23's last bullet) and `DROP SCHEMA prisma_contract CASCADE` (step 24).
+Step 23's gitignored `backend/.claude/skills/` is gone. The one step left is
+step 24, `DROP SCHEMA prisma_contract CASCADE` — Prisma Next's `marker`,
+`ledger` and `contract` tables are still sitting there backing nothing.
 
 ---
 
