@@ -3,7 +3,8 @@
   "type": "module",
   "packageManager": "yarn@4.18.0",
   "dependencies": {
-    "@prisma/orm-postgres": "8.0.0-rc.9",
+    "@prisma/adapter-pg": "7.10.0",
+    "@prisma/client": "7.10.0",
     "argon2": "^0.45.1",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
@@ -14,14 +15,13 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@prisma/cli-engine": "0.2.3",
     "@types/cookie-parser": "^1.4.10",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/node": "^22.20.2",
     "eslint": "^10.10.0",
     "prettier": "^3.9.6",
-    "prisma": "8.0.0-rc.10",
+    "prisma": "7.10.0",
     "tsx": "^4.23.13",
     "typescript": "7",
     "typescript-eslint": "^8.70.0"
@@ -34,7 +34,9 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "postinstall": "prisma skills sync || exit 0",
-    "contract:emit": "prisma contract emit"
+    "postinstall": "prisma generate",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:studio": "prisma studio"
   }
 }
