@@ -12,7 +12,7 @@ routes → controllers → services, with Zod at the edge.
 **Scope**
 
 - [x] `User` model
-- [ ] `RefreshToken` model + migration
+- [x] `RefreshToken` model + migration
 - [ ] `POST /auth/register`
 - [ ] `POST /auth/login`
 - [ ] `POST /auth/refresh`
