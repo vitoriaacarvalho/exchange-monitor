@@ -33,6 +33,13 @@ const envSchema = z.object({
   // The base URL is a module constant in the service, not an env var: there is
   // no staging ExchangeRate-API.
   EXCHANGE_RATE_API_KEY: z.string().min(1, 'required: your exchangerate-api.com key'),
+
+  // Not `z.coerce.boolean()`, which is `Boolean(value)` and turns the string
+  // "false" into true. Environment variables are only ever strings.
+  DOCS_ENABLED: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((value) => value === 'true'),
 });
 
 const parsed = envSchema.safeParse(process.env);
