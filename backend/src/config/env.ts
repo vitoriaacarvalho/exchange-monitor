@@ -29,6 +29,10 @@ const envSchema = z.object({
   // Credentialed CORS forbids a wildcard, so the SPA origin must be explicit.
   // The trailing slash is trimmed because browsers send `Origin` without one.
   CORS_ORIGIN: z.url().transform((origin) => origin.replace(/\/$/, '')),
+
+  // The base URL is a module constant in the service, not an env var: there is
+  // no staging ExchangeRate-API.
+  EXCHANGE_RATE_API_KEY: z.string().min(1, 'required: your exchangerate-api.com key'),
 });
 
 const parsed = envSchema.safeParse(process.env);
