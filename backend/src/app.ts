@@ -5,6 +5,7 @@ import { errorHandler } from './middlewares/error-handler.js';
 import { alertRoutes } from './routes/alert.routes.js';
 import { authRoutes } from './routes/auth.routes.js';
 import { currencyRoutes } from './routes/currency.routes.js';
+import { docsRoutes } from './routes/docs.routes.js';
 import { notFound } from './shared/http-error.js';
 import { env } from './config/env.js';
 
@@ -30,6 +31,13 @@ app.get('/health', (_req, res) => {
 app.use('/auth', authRoutes);
 app.use('/alerts', alertRoutes);
 app.use('/currency', currencyRoutes);
+
+// No prefix: the router owns both of its own paths. When the flag is off nothing
+// is mounted and `/docs` is an ordinary 404 rather than a 403, which would
+// confirm the docs are there.
+if (env.DOCS_ENABLED) {
+  app.use(docsRoutes);
+}
 
 // Forwarded as an error so an unknown path gets the same body shape as every
 // other failure.
