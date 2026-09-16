@@ -12,6 +12,14 @@ import { currencyCode } from './alert.schema.js';
  */
 const pairSegment = z
   .string()
+  // The pattern is documentation, not enforcement: the real check is
+  // `currencyCode` on each half after the split. Without it the OpenAPI document
+  // renders this route's one interesting parameter as a bare string.
+  .meta({
+    description: "Two currency codes joined by '-'. Case-insensitive.",
+    pattern: '^[A-Za-z0-9]{2,10}-[A-Za-z0-9]{2,10}$',
+    examples: ['usd-brl'],
+  })
   .transform((value, ctx) => {
     // The first `-` only: a third part lands in `quoteCurrency`, where
     // `currencyCode`'s `[A-Z0-9]` check rejects the hyphen it still carries.

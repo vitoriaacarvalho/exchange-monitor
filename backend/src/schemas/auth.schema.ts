@@ -8,14 +8,25 @@ import { z } from 'zod';
  * The normalization has to run *before* the format check: `z.email().trim()`
  * validates first and rejects `" ana@x.com "` outright.
  */
-export const emailSchema = z.string().trim().toLowerCase().pipe(z.email());
+export const emailSchema = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .pipe(z.email())
+  // The input side of this chain is a bare string, so `io: 'input'` documents it
+  // as one. `.meta()` puts back what the caller needs to see.
+  .meta({ format: 'email', examples: ['ana@example.com'] });
 
 /**
  * The maximum is the point: argon2's cost scales with input length, so an
  * unbounded password field is a cheap denial of service. Length is the only
  * rule worth enforcing — composition rules push people toward `Passw0rd!`.
  */
-export const passwordSchema = z.string().min(8).max(128);
+export const passwordSchema = z
+  .string()
+  .min(8)
+  .max(128)
+  .meta({ examples: ['correct horse battery'] });
 
 export const registerSchema = z.object({
   name: z.string().trim().min(1),
@@ -25,6 +36,7 @@ export const registerSchema = z.object({
     .string()
     .trim()
     .regex(/^\+?[0-9]{8,15}$/, 'must be 8-15 digits, optionally prefixed with +')
+    .meta({ examples: ['+5511987654321'] })
     .optional(),
 });
 

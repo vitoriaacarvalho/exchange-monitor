@@ -7,7 +7,11 @@ import { Direction } from '../generated/prisma/enums.ts';
  * `direction` became a native enum, a value Prisma does not recognize is a
  * `PrismaClientValidationError` — no `P2xxx` code, and a 500 rather than a 422.
  */
-export const directionSchema = z.enum(Direction);
+export const directionSchema = z
+  .enum(Direction)
+  .meta({
+    description: 'Which side of `targetRate` the live rate must reach to trigger the alert.',
+  });
 
 /**
  * Not `length(3)`: `USDT` and `SHIB` are 4. The normalization has to run before
@@ -18,7 +22,8 @@ export const currencyCode = z
   .string()
   .trim()
   .toUpperCase()
-  .regex(/^[A-Z0-9]{2,10}$/, 'must be 2-10 letters or digits');
+  .regex(/^[A-Z0-9]{2,10}$/, 'must be 2-10 letters or digits')
+  .meta({ examples: ['USD'] });
 
 const PLAIN_DECIMAL = /^-?\d+(?:\.\d+)?$/;
 
@@ -37,7 +42,11 @@ export const decimalString = z
     (value) => PLAIN_DECIMAL.test(value),
     'must be a decimal number written in full, e.g. "0.00000001"',
   )
-  .refine((value) => Number(value) > 0, 'must be greater than 0');
+  .refine((value) => Number(value) > 0, 'must be greater than 0')
+  .meta({
+    description: 'A decimal written in full. Send a string; a JSON number is accepted but lossy.',
+    examples: ['5.1204', '0.00000001'],
+  });
 
 /**
  * `z.coerce.boolean()` is `Boolean(value)`, which turns the string `"false"`
