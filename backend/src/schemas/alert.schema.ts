@@ -7,11 +7,9 @@ import { Direction } from '../generated/prisma/enums.ts';
  * `direction` became a native enum, a value Prisma does not recognize is a
  * `PrismaClientValidationError` — no `P2xxx` code, and a 500 rather than a 422.
  */
-export const directionSchema = z
-  .enum(Direction)
-  .meta({
-    description: 'Which side of `targetRate` the live rate must reach to trigger the alert.',
-  });
+export const directionSchema = z.enum(Direction).meta({
+  description: 'Which side of `targetRate` the live rate must reach to trigger the alert.',
+});
 
 /**
  * Not `length(3)`: `USDT` and `SHIB` are 4. The normalization has to run before
