@@ -34,3 +34,11 @@ export const conflict = (message = 'conflict', details?: unknown): HttpError =>
 
 export const unprocessable = (message = 'unprocessable entity', details?: unknown): HttpError =>
   new HttpError(422, message, details);
+
+/** An upstream we depend on answered with something we cannot use, or not at all. */
+export const badGateway = (message = 'bad gateway', details?: unknown): HttpError =>
+  new HttpError(502, message, details);
+
+/** Retry-later: the upstream is fine, it is rate or quota that ran out. */
+export const serviceUnavailable = (message = 'service unavailable', details?: unknown): HttpError =>
+  new HttpError(503, message, details);
